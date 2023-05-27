@@ -3,16 +3,17 @@ import { fetchShaderFile } from "./helpers.js";
 const cellVertexShader = await fetchShaderFile("cell_vertex");
 const cellFragmentShader = await fetchShaderFile("cell_fragment");
 const BACKGROUND_COLOR = {
-    r: 0.2,
-    g: 0.2,
-    b: 0.9,
+    r: 0.0,
+    g: 0.0,
+    b: 0.0,
     a: 1,
 };
+const GRID_SIZE = 5;
 const vertices = new Float32Array([
     // Bottom right corner triangle.
-    -0.8, -0.8, 0.8, -0.8, 0.8, 0.8,
+    -0.9, -0.9, 0.9, -0.9, 0.9, 0.9,
     // Top left corner triangle.
-    -0.8, -0.8, -0.8, 0.8, 0.8, 0.8,
+    -0.9, -0.9, -0.9, 0.9, 0.9, 0.9,
 ]);
 // Create canvas.
 const canvas = document.querySelector("canvas");
@@ -36,6 +37,14 @@ context.configure({
     device,
     format: canvasFormat,
 });
+// Uniform buffer
+const uniformArray = new Float32Array([GRID_SIZE, GRID_SIZE]);
+const uniformBuffer = device.createBuffer({
+    label: "Cell uniforms",
+    size: uniformArray.byteLength,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+});
+device.queue.writeBuffer(uniformBuffer, 0, uniformArray);
 // Create an (empty) vertex buffer.
 const vertexBuffer = device.createBuffer({
     label: "Two triangles",
@@ -85,6 +94,18 @@ const cellPipeline = device.createRenderPipeline({
         ],
     },
 });
+const bindGroup = device.createBindGroup({
+    label: "Cell rendering bind group",
+    layout: cellPipeline.getBindGroupLayout(0),
+    entries: [
+        {
+            binding: 0,
+            resource: {
+                buffer: uniformBuffer,
+            },
+        },
+    ],
+});
 // Clear canvas.
 const encoder = device.createCommandEncoder();
 const pass = encoder.beginRenderPass({
@@ -100,7 +121,8 @@ const pass = encoder.beginRenderPass({
 // Provide the pipeline, vertex data, and number of vertices to draw.
 pass.setPipeline(cellPipeline);
 pass.setVertexBuffer(0, vertexBuffer);
-pass.draw(vertices.length / 2); // # of vertices to draw (each vertex has two floats)
+pass.setBindGroup(0, bindGroup);
+pass.draw(vertices.length / 2, GRID_SIZE * GRID_SIZE); // # of vertices to draw (each vertex has two floats)
 // End the render pass.
 pass.end();
 const commandBuffer = encoder.finish(); // buffer of encoded commands
