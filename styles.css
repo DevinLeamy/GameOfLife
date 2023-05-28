@@ -14,9 +14,9 @@ body {
 }
 
 #container > canvas {
-    max-width: 800px;
-    max-height: 800px;
     min-height: 800px;
     min-width: 800px;
+    max-height: 800px;
+    max-width: 800px;
     margin: auto;
 } 

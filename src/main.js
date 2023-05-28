@@ -2,6 +2,22 @@ import { fetchShaderFile } from "./helpers.js";
 // Shader data.
 const cellVertexShader = await fetchShaderFile("cell_vertex");
 const cellFragmentShader = await fetchShaderFile("cell_fragment");
+const cellComputeShader = await fetchShaderFile("cell_compute");
+let running = false;
+const toggleButton = document.getElementById("toggle-button");
+const restartButton = document.getElementById("restart-button");
+toggleButton.textContent = running ? "Running" : "Paused";
+toggleButton.onclick = () => {
+    running = !running;
+    toggleButton.textContent = running ? "Running" : "Paused";
+};
+function generateInitialState() {
+    const cellStateArray = new Uint32Array(GRID_SIZE * GRID_SIZE);
+    for (let i = 0; i < cellStateArray.length; ++i) {
+        cellStateArray[i] = Math.random() > 0.8 ? 1 : 0;
+    }
+    return cellStateArray;
+}
 const BACKGROUND_COLOR = {
     r: 0.0,
     g: 0.0,
@@ -10,6 +26,7 @@ const BACKGROUND_COLOR = {
 };
 const GRID_SIZE = 22;
 const UPDATE_INTERVAL = 200; // ms
+const WORKGROUP_SIZE = 8;
 const vertices = new Float32Array([
     // Bottom right corner triangle.
     -0.9, -0.9, 0.9, -0.9, 0.9, 0.9,
@@ -50,10 +67,7 @@ const uniformBuffer = device.createBuffer({
 });
 device.queue.writeBuffer(uniformBuffer, 0, uniformArray);
 // Storage buffer
-const cellStateArray = new Uint32Array(GRID_SIZE * GRID_SIZE);
-for (let i = 0; i < cellStateArray.length; ++i) {
-    cellStateArray[i] = i % 3 == 0 ? 1 : 0;
-}
+const cellStateArray = generateInitialState();
 const cellStateStorage = [
     device.createBuffer({
         label: "(A) Cell state buffer",
@@ -66,11 +80,11 @@ const cellStateStorage = [
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     }),
 ];
+restartButton.onclick = () => {
+    device.queue.writeBuffer(cellStateStorage[0], 0, generateInitialState());
+    device.queue.writeBuffer(cellStateStorage[1], 0, generateInitialState());
+};
 device.queue.writeBuffer(cellStateStorage[0], 0, cellStateArray);
-for (let i = 0; i < cellStateArray.length; ++i) {
-    cellStateArray[i] = i % 3 != 0 ? 1 : 0;
-}
-device.queue.writeBuffer(cellStateStorage[1], 0, cellStateArray);
 // Create an (empty) vertex buffer.
 const vertexBuffer = device.createBuffer({
     label: "Two triangles",
@@ -93,16 +107,50 @@ const vertexBufferLayout = {
     ],
 };
 const cellVertexModule = device.createShaderModule({
-    label: "Cell shader",
+    label: "Cell vertex shader",
     code: cellVertexShader,
 });
 const cellFragmentModule = device.createShaderModule({
-    label: "Fragment shader",
+    label: "Cell fragment shader",
     code: cellFragmentShader,
 });
-const cellPipeline = device.createRenderPipeline({
-    label: "Cell pipeline",
-    layout: "auto",
+const cellComputeModule = device.createShaderModule({
+    label: "Cell computer shader",
+    code: cellComputeShader,
+});
+const bindGroupLayout = device.createBindGroupLayout({
+    label: "Cell bind group layout",
+    entries: [
+        {
+            binding: 0,
+            visibility: GPUShaderStage.VERTEX | GPUShaderStage.COMPUTE | GPUShaderStage.FRAGMENT,
+            buffer: {
+                type: "uniform",
+            },
+        },
+        {
+            binding: 1,
+            visibility: GPUShaderStage.VERTEX | GPUShaderStage.COMPUTE,
+            buffer: {
+                type: "read-only-storage",
+            },
+        },
+        {
+            binding: 2,
+            visibility: GPUShaderStage.COMPUTE,
+            buffer: {
+                type: "storage",
+            },
+        },
+    ],
+});
+const pipelineLayout = device.createPipelineLayout({
+    label: "Cell pipeline layout",
+    bindGroupLayouts: [bindGroupLayout],
+});
+const cellRenderPipeline = device.createRenderPipeline({
+    label: "Cell render, pipeline",
+    layout: pipelineLayout,
     vertex: {
         module: cellVertexModule,
         entryPoint: "vertexMain",
@@ -120,10 +168,18 @@ const cellPipeline = device.createRenderPipeline({
         ],
     },
 });
+const cellComputePipeline = device.createComputePipeline({
+    label: "Cell compute pipeline",
+    layout: pipelineLayout,
+    compute: {
+        module: cellComputeModule,
+        entryPoint: "computeMain",
+    },
+});
 const bindGroups = [
     device.createBindGroup({
         label: "(A) Cell rendering bind group",
-        layout: cellPipeline.getBindGroupLayout(0),
+        layout: bindGroupLayout,
         entries: [
             {
                 binding: 0,
@@ -137,11 +193,17 @@ const bindGroups = [
                     buffer: cellStateStorage[0],
                 },
             },
+            {
+                binding: 2,
+                resource: {
+                    buffer: cellStateStorage[1],
+                },
+            },
         ],
     }),
     device.createBindGroup({
         label: "(B) Cell rendering bind group",
-        layout: cellPipeline.getBindGroupLayout(0),
+        layout: bindGroupLayout,
         entries: [
             {
                 binding: 0,
@@ -155,13 +217,28 @@ const bindGroups = [
                     buffer: cellStateStorage[1],
                 },
             },
+            {
+                binding: 2,
+                resource: {
+                    buffer: cellStateStorage[0],
+                },
+            },
         ],
     }),
 ];
 let currentStep = 0;
-function renderGrid() {
-    // Clear canvas.
+function update() {
     const encoder = device.createCommandEncoder();
+    const computePass = encoder.beginComputePass();
+    computePass.setPipeline(cellComputePipeline);
+    computePass.setBindGroup(0, bindGroups[currentStep % 2]);
+    const workgroupCount = Math.ceil(GRID_SIZE / WORKGROUP_SIZE);
+    computePass.dispatchWorkgroups(workgroupCount, workgroupCount);
+    computePass.end();
+    if (running) {
+        ++currentStep;
+    }
+    // Clear canvas.
     const pass = encoder.beginRenderPass({
         colorAttachments: [
             {
@@ -173,7 +250,7 @@ function renderGrid() {
         ],
     });
     // Provide the pipeline, vertex data, and number of vertices to draw.
-    pass.setPipeline(cellPipeline);
+    pass.setPipeline(cellRenderPipeline);
     pass.setVertexBuffer(0, vertexBuffer);
     pass.setBindGroup(0, bindGroups[currentStep % 2]);
     pass.draw(vertices.length / 2, GRID_SIZE * GRID_SIZE); // # of vertices to draw (each vertex has two floats)
@@ -181,6 +258,5 @@ function renderGrid() {
     pass.end();
     // Submit the commands to the device, to be run.
     device.queue.submit([encoder.finish()]);
-    // ++currentStep
 }
-setInterval(renderGrid, UPDATE_INTERVAL);
+setInterval(update, UPDATE_INTERVAL);
