@@ -6,7 +6,7 @@ struct FragmentIn {
 
 @fragment
 fn fragmentMain(input: FragmentIn) -> @location(0) vec4f {
-    let unit = 2 / grid;
-    let coverage = (input.cell * unit + 1) / 2;
-    return vec4f(coverage, 1 - input.cell.x / grid.x, 1);
+    let unit = 1.0 / grid;
+    let coverage = input.cell * unit;
+    return vec4f(coverage, 1 - coverage.y, 1);
 }

@@ -2,18 +2,29 @@ import { fetchShaderFile } from "./helpers.js";
 // Shader data.
 const cellVertexShader = await fetchShaderFile("cell_vertex");
 const cellFragmentShader = await fetchShaderFile("cell_fragment");
+class Simulation {
+    constructor(width, height) {
+        this.width = width;
+        this.height = height;
+        this.state = new Uint32Array(width * height);
+        for (let i = 0; i < this.state.length; i++) {
+            this.state[i] = i % 3 == 0 ? 1 : 0;
+        }
+    }
+    update() { }
+}
 const BACKGROUND_COLOR = {
     r: 0.0,
     g: 0.0,
     b: 0.0,
     a: 1,
 };
-const GRID_SIZE = 5;
+const GRID_SIZE = 22;
 const vertices = new Float32Array([
     // Bottom right corner triangle.
-    -0.9, -0.9, 0.9, -0.9, 0.9, 0.9,
+    -0.8, -0.8, 0.8, -0.8, 0.8, 0.8,
     // Top left corner triangle.
-    -0.9, -0.9, -0.9, 0.9, 0.9, 0.9,
+    -0.8, -0.8, -0.8, 0.8, 0.8, 0.8,
 ]);
 // Create canvas.
 const canvas = document.querySelector("canvas");
@@ -45,6 +56,14 @@ const uniformBuffer = device.createBuffer({
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 });
 device.queue.writeBuffer(uniformBuffer, 0, uniformArray);
+// Storage buffer
+const simulation = new Simulation(GRID_SIZE, GRID_SIZE);
+const cellStateStorage = device.createBuffer({
+    label: "Cell state buffer",
+    size: simulation.state.byteLength,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+});
+device.queue.writeBuffer(cellStateStorage, 0, simulation.state);
 // Create an (empty) vertex buffer.
 const vertexBuffer = device.createBuffer({
     label: "Two triangles",
@@ -102,6 +121,12 @@ const bindGroup = device.createBindGroup({
             binding: 0,
             resource: {
                 buffer: uniformBuffer,
+            },
+        },
+        {
+            binding: 1,
+            resource: {
+                buffer: cellStateStorage,
             },
         },
     ],
