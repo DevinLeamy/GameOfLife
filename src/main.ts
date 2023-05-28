@@ -5,7 +5,7 @@ const cellVertexShader = await fetchShaderFile("cell_vertex")
 const cellFragmentShader = await fetchShaderFile("cell_fragment")
 const cellComputeShader = await fetchShaderFile("cell_compute")
 
-let running = false 
+let running = false
 const toggleButton = document.getElementById("toggle-button")!
 const restartButton = document.getElementById("restart-button")!
 toggleButton.textContent = running ? "Running" : "Paused"
@@ -17,11 +17,10 @@ toggleButton.onclick = () => {
 function generateInitialState(): Uint32Array {
     const cellStateArray = new Uint32Array(GRID_SIZE * GRID_SIZE)
     for (let i = 0; i < cellStateArray.length; ++i) {
-        cellStateArray[i] = Math.random() > 0.8 ? 1 : 0
+        cellStateArray[i] = Math.random() > 0.7 ? 1 : 0
     }
     return cellStateArray
 }
-
 
 const BACKGROUND_COLOR: GPUColor = {
     r: 0.0,
@@ -29,8 +28,8 @@ const BACKGROUND_COLOR: GPUColor = {
     b: 0.0,
     a: 1,
 }
-const GRID_SIZE = 22
-const UPDATE_INTERVAL = 200 // ms
+const GRID_SIZE = 40
+const UPDATE_INTERVAL = 100 // ms
 const WORKGROUP_SIZE = 8
 
 const vertices = new Float32Array([
@@ -76,7 +75,7 @@ const uniformBuffer = device.createBuffer({
 device.queue.writeBuffer(uniformBuffer, 0, uniformArray)
 
 // Storage buffer
-const cellStateArray = generateInitialState() 
+const cellStateArray = generateInitialState()
 const cellStateStorage = [
     device.createBuffer({
         label: "(A) Cell state buffer",

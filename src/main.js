@@ -14,7 +14,7 @@ toggleButton.onclick = () => {
 function generateInitialState() {
     const cellStateArray = new Uint32Array(GRID_SIZE * GRID_SIZE);
     for (let i = 0; i < cellStateArray.length; ++i) {
-        cellStateArray[i] = Math.random() > 0.8 ? 1 : 0;
+        cellStateArray[i] = Math.random() > 0.7 ? 1 : 0;
     }
     return cellStateArray;
 }
@@ -24,8 +24,8 @@ const BACKGROUND_COLOR = {
     b: 0.0,
     a: 1,
 };
-const GRID_SIZE = 22;
-const UPDATE_INTERVAL = 200; // ms
+const GRID_SIZE = 40;
+const UPDATE_INTERVAL = 100; // ms
 const WORKGROUP_SIZE = 8;
 const vertices = new Float32Array([
     // Bottom right corner triangle.

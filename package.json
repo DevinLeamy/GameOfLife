@@ -5,6 +5,7 @@
     "author": "Devin Leamy <devinleamy@gmail.com>",
     "dependencies": {
         "@webgpu/types": "^0.1.32",
+        "stats.js": "^0.17.0",
         "typescript": "^5.0.4"
     },
     "license": "MIT",

@@ -12,6 +12,11 @@
   resolved "https://registry.yarnpkg.com/@webgpu/types/-/types-0.1.32.tgz#098ba131c16cc59406b6721f612238130b58846c"
   integrity sha512-H6JRAvRonWxqREjxXMZgQmdgIFPe6mykLgdrHY7EQE7YihMKd/SjtSGilUmMKECVdUMg2IQB9vzaXDiTj1AxZg==
 
+stats.js@^0.17.0:
+  version "0.17.0"
+  resolved "https://registry.yarnpkg.com/stats.js/-/stats.js-0.17.0.tgz#b1c3dc46d94498b578b7fd3985b81ace7131cc7d"
+  integrity sha512-hNKz8phvYLPEcRkeG1rsGmV5ChMjKDAWU7/OJJdDErPBNChQXxCo3WZurGpnWc6gZhAzEPFad1aVgyOANH1sMw==
+
 typescript@^5.0.4:
   version "5.0.4"
   resolved "https://registry.yarnpkg.com/typescript/-/typescript-5.0.4.tgz#b217fd20119bd61a94d4011274e0ab369058da3b"
