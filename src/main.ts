@@ -4,18 +4,6 @@ import { fetchShaderFile } from "./helpers.js"
 const cellVertexShader = await fetchShaderFile("cell_vertex")
 const cellFragmentShader = await fetchShaderFile("cell_fragment")
 
-class Simulation {
-    readonly state: Uint32Array
-    constructor(readonly width: number, readonly height: number) {
-        this.state = new Uint32Array(width * height)
-        for (let i = 0; i < this.state.length; i++) {
-            this.state[i] = i % 3 == 0 ? 1 : 0
-        }
-    }
-
-    update() {}
-}
-
 const BACKGROUND_COLOR: GPUColor = {
     r: 0.0,
     g: 0.0,
@@ -23,12 +11,13 @@ const BACKGROUND_COLOR: GPUColor = {
     a: 1,
 }
 const GRID_SIZE = 22
+const UPDATE_INTERVAL = 200 // ms
 const vertices = new Float32Array([
     // Bottom right corner triangle.
-    -0.8, -0.8, 0.8, -0.8, 0.8, 0.8,
+    -0.9, -0.9, 0.9, -0.9, 0.9, 0.9,
 
     // Top left corner triangle.
-    -0.8, -0.8, -0.8, 0.8, 0.8, 0.8,
+    -0.9, -0.9, -0.9, 0.9, 0.9, 0.9,
 ])
 
 // Create canvas.
@@ -36,6 +25,9 @@ const canvas = document.querySelector("canvas")
 if (!canvas) {
     throw new Error("Canvas not found.")
 }
+const devicePixelRatio = window.devicePixelRatio || 1
+canvas.width = canvas.clientWidth * devicePixelRatio
+canvas.height = canvas.clientHeight * devicePixelRatio
 // Create device.
 if (!navigator.gpu) {
     throw new Error("WebGPU not supported on this browser.")
@@ -62,13 +54,27 @@ const uniformBuffer = device.createBuffer({
 })
 device.queue.writeBuffer(uniformBuffer, 0, uniformArray)
 // Storage buffer
-const simulation = new Simulation(GRID_SIZE, GRID_SIZE)
-const cellStateStorage = device.createBuffer({
-    label: "Cell state buffer",
-    size: simulation.state.byteLength,
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-})
-device.queue.writeBuffer(cellStateStorage, 0, simulation.state)
+const cellStateArray = new Uint32Array(GRID_SIZE * GRID_SIZE)
+for (let i = 0; i < cellStateArray.length; ++i) {
+    cellStateArray[i] = i % 3 == 0 ? 1 : 0
+}
+const cellStateStorage = [
+    device.createBuffer({
+        label: "(A) Cell state buffer",
+        size: cellStateArray.byteLength,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    }),
+    device.createBuffer({
+        label: "(B) Cell state buffer",
+        size: cellStateArray.byteLength,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    }),
+]
+device.queue.writeBuffer(cellStateStorage[0], 0, cellStateArray)
+for (let i = 0; i < cellStateArray.length; ++i) {
+    cellStateArray[i] = i % 3 != 0 ? 1 : 0
+}
+device.queue.writeBuffer(cellStateStorage[1], 0, cellStateArray)
 // Create an (empty) vertex buffer.
 const vertexBuffer = device.createBuffer({
     label: "Two triangles",
@@ -120,48 +126,72 @@ const cellPipeline = device.createRenderPipeline({
     },
 })
 
-const bindGroup = device.createBindGroup({
-    label: "Cell rendering bind group",
-    layout: cellPipeline.getBindGroupLayout(0),
-    entries: [
-        {
-            binding: 0,
-            resource: {
-                buffer: uniformBuffer,
+const bindGroups = [
+    device.createBindGroup({
+        label: "(A) Cell rendering bind group",
+        layout: cellPipeline.getBindGroupLayout(0),
+        entries: [
+            {
+                binding: 0,
+                resource: {
+                    buffer: uniformBuffer,
+                },
             },
-        },
-        {
-            binding: 1,
-            resource: {
-                buffer: cellStateStorage,
+            {
+                binding: 1,
+                resource: {
+                    buffer: cellStateStorage[0],
+                },
             },
-        },
-    ],
-})
+        ],
+    }),
+    device.createBindGroup({
+        label: "(B) Cell rendering bind group",
+        layout: cellPipeline.getBindGroupLayout(0),
+        entries: [
+            {
+                binding: 0,
+                resource: {
+                    buffer: uniformBuffer,
+                },
+            },
+            {
+                binding: 1,
+                resource: {
+                    buffer: cellStateStorage[1],
+                },
+            },
+        ],
+    }),
+]
 
-// Clear canvas.
-const encoder = device.createCommandEncoder()
-const pass = encoder.beginRenderPass({
-    colorAttachments: [
-        {
-            view: context.getCurrentTexture().createView(), // view into the texture
-            clearValue: BACKGROUND_COLOR,
-            loadOp: "clear", // create the canvas when the pass beings
-            storeOp: "store", // store the results of the pass into the texture
-        },
-    ],
-})
-// Provide the pipeline, vertex data, and number of vertices to draw.
-pass.setPipeline(cellPipeline)
-pass.setVertexBuffer(0, vertexBuffer)
-pass.setBindGroup(0, bindGroup)
-pass.draw(vertices.length / 2, GRID_SIZE * GRID_SIZE) // # of vertices to draw (each vertex has two floats)
-// End the render pass.
-pass.end()
-const commandBuffer = encoder.finish() // buffer of encoded commands
-// Submit the commands to the device, to be run.
-device.queue.submit([commandBuffer])
-// Alternatively: device.queue.submit([encoder.finish()])
-// because the commandBuffer cannot be reused
+let currentStep = 0
+function renderGrid() {
+    // Clear canvas.
+    const encoder = device.createCommandEncoder()
+    const pass = encoder.beginRenderPass({
+        colorAttachments: [
+            {
+                view: context.getCurrentTexture().createView(), // view into the texture
+                clearValue: BACKGROUND_COLOR,
+                loadOp: "clear", // create the canvas when the pass beings
+                storeOp: "store", // store the results of the pass into the texture
+            },
+        ],
+    })
+    // Provide the pipeline, vertex data, and number of vertices to draw.
+    pass.setPipeline(cellPipeline)
+    pass.setVertexBuffer(0, vertexBuffer)
+    pass.setBindGroup(0, bindGroups[currentStep % 2])
+    pass.draw(vertices.length / 2, GRID_SIZE * GRID_SIZE) // # of vertices to draw (each vertex has two floats)
+    // End the render pass.
+    pass.end()
+    // Submit the commands to the device, to be run.
+    device.queue.submit([encoder.finish()])
+
+    // ++currentStep
+}
+
+setInterval(renderGrid, UPDATE_INTERVAL)
 
 export {}
